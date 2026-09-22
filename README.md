@@ -76,7 +76,7 @@ npm start
 입력은 고유한 `id`와 분류할 `name`을 가진 JSONL 파일입니다. `examples/batch-input.jsonl`에서 합성 예시를 확인할 수 있습니다.
 
 ```bash
-OPENAI_MODEL=gpt-5.4-mini npm run batch -- \
+OPENAI_MODEL=gpt-5.4-mini REASONING_EFFORT=none npm run batch -- \
   --input examples/batch-input.jsonl \
   --repetitions 3 \
   --concurrency 2
