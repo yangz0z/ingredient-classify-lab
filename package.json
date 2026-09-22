@@ -1,0 +1,21 @@
+{
+  "name": "ingredient-classify-lab",
+  "version": "0.1.0",
+  "description": "폐쇄 어휘(controlled vocabulary) 기반 LLM 텍스트 분류 검증 서버",
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node src/server.mjs",
+    "dev": "node --watch src/server.mjs",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "ajv": "^8.17.1",
+    "better-sqlite3": "^12.4.1",
+    "express": "^5.1.0",
+    "openai": "^6.9.0"
+  }
+}

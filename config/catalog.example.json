@@ -1,0 +1,52 @@
+[
+  {
+    "major": "곡물",
+    "minor": "쌀",
+    "description": "쌀, 현미, 백미, 찹쌀 등 쌀 기반 곡물"
+  },
+  {
+    "major": "곡물",
+    "minor": "밀",
+    "description": "밀, 밀가루, 통밀 등 밀 기반 곡물"
+  },
+  {
+    "major": "육류",
+    "minor": "닭고기",
+    "description": "닭 유래 육류와 그 가공품"
+  },
+  {
+    "major": "육류",
+    "minor": "소고기",
+    "description": "소 유래 육류와 그 가공품"
+  },
+  {
+    "major": "수산물",
+    "minor": "연어",
+    "description": "연어와 연어 가공품"
+  },
+  {
+    "major": "채소",
+    "minor": "당근",
+    "description": "당근과 당근 가공품"
+  },
+  {
+    "major": "과일",
+    "minor": "사과",
+    "description": "사과와 사과 가공품"
+  },
+  {
+    "major": "첨가물",
+    "minor": "향료",
+    "description": "맛과 향을 내기 위한 천연·합성 향료"
+  },
+  {
+    "major": "첨가물",
+    "minor": "보존료",
+    "description": "보존 기간 연장을 위한 첨가물"
+  },
+  {
+    "major": "기능성",
+    "minor": "유산균",
+    "description": "발효식품·건강기능식품에 쓰이는 프로바이오틱스 균주"
+  }
+]
