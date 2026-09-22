@@ -11,11 +11,13 @@
     "start": "node src/server.mjs",
     "dev": "node --watch src/server.mjs",
     "batch": "node src/batch.mjs",
+    "finalize:review": "node src/finalize-review.mjs",
     "test": "node --test"
   },
   "dependencies": {
     "ajv": "^8.17.1",
     "better-sqlite3": "^12.4.1",
+    "csv-parse": "^7.0.2",
     "express": "^5.1.0",
     "openai": "^6.9.0"
   }

@@ -2,7 +2,7 @@
 
 AI를 활용해 원료와 성분을 정해진 카테고리로 자동 분류하는 도구입니다.
 
-단건 HTTP API와 반복 가능한 명령행 배치를 제공합니다. 분류 규칙과 카테고리는 로컬 설정으로 주입하며, 저장소에는 특정 서비스의 데이터나 정책을 포함하지 않습니다.
+단건 HTTP API, 반복 가능한 명령행 배치, 검수 결과 확정 도구를 제공합니다. 분류 규칙과 카테고리는 로컬 설정으로 주입하며, 저장소에는 특정 서비스의 데이터나 정책을 포함하지 않습니다.
 
 ## 핵심 특성
 
@@ -21,6 +21,10 @@ AI를 활용해 원료와 성분을 정해진 카테고리로 자동 분류하�
 ### 반복 가능한 배치 실험
 
 JSONL 데이터셋을 제한된 동시성으로 분류하고 결과를 SQLite에 저장합니다. 같은 입력을 여러 번 실행해 대표 분류, 추가 분류, 검수 필요 여부가 일관되는지도 측정합니다. 일부 항목의 실패는 나머지 실행을 중단하지 않습니다.
+
+### 검수 결과 확정
+
+운영 분류와 AI 분류를 비교한 검수 CSV에서 최종 판정만 추출합니다. 이후 작업은 비교용 원본 대신 확정 대표·추가 분류만 담은 단순 CSV를 사용합니다.
 
 ### 도메인 설정 격리
 
@@ -84,6 +88,14 @@ OPENAI_MODEL=gpt-5.4-mini REASONING_EFFORT=none npm run batch -- \
 
 기본 결과 파일은 `data/classifications.sqlite3`입니다. 입력 데이터와 SQLite 결과는 커밋 대상에서 제외됩니다.
 
+## 검수 결과 확정
+
+```bash
+npm run finalize:review -- --input /path/to/review.csv
+```
+
+기본 출력은 `data/final-classifications.csv`이며, 확정된 모든 분류를 현재 카탈로그와 대조합니다.
+
 ## 분류 계약
 
 - `primary_category_key`: 대표 분류 최대 1개
@@ -115,7 +127,8 @@ config/                    합성 설정 예시
 examples/                  합성 배치 입력 예시
 src/server.mjs             HTTP 서버 진입점
 src/batch.mjs              배치 실행 진입점
-src/lib/                   설정·분류·계약·배치·SQLite 계층
+src/finalize-review.mjs    검수 결과 확정 진입점
+src/lib/                   설정·분류·계약·배치·확정값 변환 계층
 src/routes/                HTTP 라우트
 test/                      외부 API를 호출하지 않는 테스트
 ```
