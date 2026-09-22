@@ -57,4 +57,97 @@ test("DRY_RUN 강제 시 키가 있어도 LLM을 호출하지 않음", async () 
 
   const result = await classifier.classify("쌀");
   assert.equal(result.dryRun, true);
+  assert.equal(result.attemptCount, 0);
+});
+
+test("일시 오류는 제한 횟수 안에서 재시도하고 시도 횟수를 반환", async () => {
+  let calls = 0;
+  const client = {
+    responses: {
+      async create() {
+        calls += 1;
+        if (calls < 3) {
+          const error = new Error("temporary failure");
+          error.status = 429;
+          throw error;
+        }
+        return {
+          id: "response-1",
+          model: "synthetic-model",
+          output_text: JSON.stringify({
+            name: "쌀",
+            primary_category_key: "곡물::쌀",
+            additional_category_keys: [],
+            needs_review: false,
+            reason: "쌀 기반",
+          }),
+          usage: null,
+        };
+      },
+    },
+  };
+  const classifier = createClassifier({
+    catalog,
+    promptSpec,
+    apiKey: "sk-synthetic-not-a-real-key",
+    dryRun: false,
+    maxAttempts: 3,
+    client,
+    retryDelay: async () => {},
+  });
+
+  const result = await classifier.classify("쌀");
+  assert.equal(calls, 3);
+  assert.equal(result.attemptCount, 3);
+});
+
+test("재시도 대상이 아닌 오류는 즉시 반환", async () => {
+  let calls = 0;
+  const client = {
+    responses: {
+      async create() {
+        calls += 1;
+        const error = new Error("bad request");
+        error.status = 400;
+        throw error;
+      },
+    },
+  };
+  const classifier = createClassifier({
+    catalog,
+    promptSpec,
+    apiKey: "sk-synthetic-not-a-real-key",
+    dryRun: false,
+    maxAttempts: 3,
+    client,
+    retryDelay: async () => {},
+  });
+
+  await assert.rejects(
+    classifier.classify("쌀"),
+    (error) => error.message === "bad request" && error.attemptCount === 1,
+  );
+  assert.equal(calls, 1);
+});
+
+test("수정 불가능한 SDK 오류 객체도 원래 오류로 반환", async () => {
+  const originalError = new Error("immutable error");
+  originalError.status = 400;
+  Object.freeze(originalError);
+  const client = {
+    responses: {
+      async create() {
+        throw originalError;
+      },
+    },
+  };
+  const classifier = createClassifier({
+    catalog,
+    promptSpec,
+    apiKey: "sk-synthetic-not-a-real-key",
+    dryRun: false,
+    client,
+  });
+
+  await assert.rejects(classifier.classify("쌀"), (error) => error === originalError);
 });

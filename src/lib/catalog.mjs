@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 
 import Ajv from "ajv";
 
-const ajv = new Ajv({ allErrors: true });
+const ajv = new Ajv({ allErrors: true, allowUnionTypes: true });
 
 // 카탈로그 파일 구조 — 항목별 major·minor·description 필수
 const catalogShape = {

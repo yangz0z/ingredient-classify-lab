@@ -1,7 +1,7 @@
 {
   "name": "ingredient-classify-lab",
   "version": "0.1.0",
-  "description": "폐쇄 어휘(controlled vocabulary) 기반 LLM 텍스트 분류 검증 서버",
+  "description": "AI를 활용해 원료와 성분을 정해진 카테고리로 자동 분류하는 도구",
   "type": "module",
   "license": "MIT",
   "engines": {
@@ -10,6 +10,7 @@
   "scripts": {
     "start": "node src/server.mjs",
     "dev": "node --watch src/server.mjs",
+    "batch": "node src/batch.mjs",
     "test": "node --test"
   },
   "dependencies": {

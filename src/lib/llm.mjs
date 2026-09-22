@@ -63,11 +63,13 @@ export function createClassifier({
   timeoutMs = 30000,
   maxAttempts = 3,
   dryRun = !apiKey,
+  client: providedClient = null,
+  retryDelay = wait,
 }) {
   const schema = buildClassificationSchema(catalog);
   const systemPrompt = buildSystemPrompt(promptSpec, catalog);
   // SDK 자체 재시도는 끄고 이 계층에서 횟수를 통제
-  const client = dryRun ? null : new OpenAI({ apiKey, maxRetries: 0 });
+  const client = dryRun ? null : (providedClient ?? new OpenAI({ apiKey, maxRetries: 0 }));
 
   async function classify(name) {
     if (dryRun) {
@@ -76,6 +78,7 @@ export function createClassifier({
         model: null,
         responseId: null,
         usage: null,
+        attemptCount: 0,
         classification: {
           name,
           primary_category_key: "",
@@ -87,7 +90,9 @@ export function createClassifier({
     }
 
     let lastError;
+    let attemptCount = 0;
     for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      attemptCount = attempt;
       try {
         const response = await client.responses.create({
           model,
@@ -111,12 +116,20 @@ export function createClassifier({
           model: response.model,
           responseId: response.id,
           usage: response.usage ?? null,
+          attemptCount: attempt,
           classification: JSON.parse(response.output_text),
         };
       } catch (error) {
         lastError = error;
         if (attempt >= maxAttempts || !isRetryable(error)) break;
-        await wait(RETRY_BASE_DELAY_MS * attempt);
+        await retryDelay(RETRY_BASE_DELAY_MS * attempt);
+      }
+    }
+    if (lastError && typeof lastError === "object") {
+      try {
+        lastError.attemptCount = attemptCount;
+      } catch {
+        // 수정 불가능한 SDK 오류 객체는 원본 그대로 전달
       }
     }
     throw lastError;
