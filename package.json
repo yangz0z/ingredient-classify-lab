@@ -11,6 +11,7 @@
     "start": "node src/server.mjs",
     "dev": "node --watch src/server.mjs",
     "batch": "node src/batch.mjs",
+    "evaluate": "node src/evaluate.mjs",
     "finalize:review": "node src/finalize-review.mjs",
     "test": "node --test"
   },
