@@ -134,6 +134,7 @@ test("검수 CSV는 비교값과 기획 입력 열을 사람이 읽는 이름으
   assert.match(csv, /"현재 운영 분류","LLM 대표 분류","LLM 추가 분류"/);
   assert.match(csv, /"기획 검수 결과","확정 대표 분류","확정 추가 분류","검수 의견"/);
   assert.match(csv, /"원료 > 어류 \| 성분 > 오메가"/);
+  assert.doesNotMatch(csv, /"계약 위반"|"실행 오류"/);
   assert.doesNotMatch(csv, /primaryCategoryKey|needsReview/);
 });
 
