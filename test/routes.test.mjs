@@ -34,7 +34,7 @@ test("GET /healthz는 dry-run 상태와 카탈로그 크기를 보고", async ()
   assert.equal(body.status, "ok");
   assert.equal(body.dryRun, true);
   assert.equal(body.catalogCount, 10);
-  assert.equal(body.promptVersion, 1);
+  assert.equal(body.promptVersion, 2);
 });
 
 test("POST /classify는 dry-run 판정과 빈 계약 위반 목록을 반환", async () => {
