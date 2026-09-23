@@ -102,6 +102,10 @@ export function buildFinalClassifications(text, { onExcluded = null } = {}) {
       decisionSource = plannerResult;
     } else if (plannerResult === "신규 값으로 분류") {
       primaryCategoryKey = toCategoryKey(row["확정 대표 분류"]);
+      if (primaryCategoryKey === "삭제") {
+        onExcluded?.({ ...identity, reason: "기획 판정: 삭제" });
+        return [];
+      }
       additionalCategoryKeys = [];
       decisionSource = plannerResult;
     } else {

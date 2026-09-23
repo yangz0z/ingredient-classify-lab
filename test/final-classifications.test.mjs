@@ -106,6 +106,25 @@ test("운영·LLM·기획 확정값이 모두 없는 행은 제외", () => {
   }]);
 });
 
+test("신규 분류의 확정 대표값이 삭제이면 확정 분류에서 제외", () => {
+  const excluded = [];
+  const results = buildFinalClassifications(sourceCsv([{
+    "성분 ID": "1",
+    "성분명": "삭제 대상",
+    "현재 운영 분류": "",
+    "LLM 대표 분류": "",
+    "기획 검수 결과": "신규 값으로 분류",
+    "확정 대표 분류": "삭제",
+  }]), { onExcluded: (item) => excluded.push(item) });
+
+  assert.deepEqual(results, []);
+  assert.deepEqual(excluded, [{
+    externalId: "1",
+    name: "삭제 대상",
+    reason: "기획 판정: 삭제",
+  }]);
+});
+
 test("확정값 CSV 직렬화 후 같은 값으로 다시 파싱", () => {
   const items = [{
     externalId: "1",
