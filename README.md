@@ -92,6 +92,20 @@ OPENAI_MODEL=gpt-5.4-mini REASONING_EFFORT=none npm run batch -- \
 
 기본 결과 파일은 `data/classifications.sqlite3`입니다. 입력 데이터와 SQLite 결과는 커밋 대상에서 제외됩니다.
 
+## 검수 CSV 생성
+
+기존 분류가 포함된 JSONL 스냅샷과 배치 실행 결과를 결합해 운영 분류, LLM 분류, 운영 처리 방식과 수정 입력란을 한 CSV로 생성합니다.
+
+```bash
+npm run review:export -- \
+  --source /path/to/source.jsonl \
+  --database data/classifications.sqlite3 \
+  --run-id <batch-run-id> \
+  --output data/review-queue.csv
+```
+
+입력 스냅샷은 `ingredientId`, `ingredientName`, `existingCategoryKeys`를 포함합니다. 검수자는 틀린 행만 판정과 확정값을 입력하며, 빈 기획 검수 결과는 LLM 분류 수용으로 처리됩니다.
+
 ## 검수 결과 확정
 
 ```bash
