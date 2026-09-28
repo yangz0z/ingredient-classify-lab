@@ -8,17 +8,19 @@ LLM에 분류를 맡기면 카탈로그에 없는 값을 지어내거나 같은 
 
 ## 이 하네스의 특성
 
-**등록된 카테고리만 나오도록 두 겹으로 막습니다.** OpenAI strict JSON Schema가 허용 키만 반환하도록 제한하고, 애플리케이션이 응답을 다시 검사합니다. 스키마만으로는 형식은 맞지만 의미가 어긋난 응답(대표·추가 분류 중복, 확정 판정인데 대표 분류 없음, 정책에 없는 카테고리 조합)을 걸러내지 못하기 때문입니다.
+**등록된 카테고리만 나오도록 두 겹으로 막습니다.** OpenAI strict JSON Schema가 허용 키만 반환하도록 제한하고, 애플리케이션이 응답을 다시 검사합니다. 스키마만으로는 형식은 맞지만 의미가 어긋난 응답(대표·추가 분류 중복, 확정 판정인데 대표 분류 없음, 입력 이름 불일치)을 걸러내지 못하기 때문입니다.
 
 **도메인 지식을 세 층으로 나눕니다.** 개별 항목의 정답을 프롬프트에 적어 넣으면 그 항목만 맞고 새 입력에는 일반화되지 않습니다. 그래서 역할을 분리했습니다.
 
-| 층 | 파일 | 담는 것 |
-| --- | --- | --- |
-| 카탈로그 | `config/catalog.json` | 각 카테고리가 무엇을 가리키는지, 인접 카테고리와의 경계 |
-| 프롬프트 | `config/prompt.json` | 이름을 어떻게 분해하고 어떤 순서로 판정할지 |
-| 정책 | `config/policy.json` | 대표 분류 우선순위, 허용되는 대표·추가 조합 |
+| 층 | 파일 | 담는 것 | 필수 |
+| --- | --- | --- | --- |
+| 카탈로그 | `config/catalog.json` | 각 카테고리가 무엇을 가리키는지, 인접 카테고리와의 경계 | 필수 |
+| 프롬프트 | `config/prompt.json` | 이름을 어떻게 분해하고 어떤 순서로 판정할지 | 필수 |
+| 정책 | `config/policy.json` | 대표 분류 우선순위, 허용되는 대표·추가 조합 | 선택 |
 
-정책은 프롬프트 지시문으로 주입되는 동시에 후처리에서도 쓰입니다. 모델이 고른 카테고리 집합은 유지한 채 대표·추가 순서만 정책에 맞게 바로잡고, 허용 목록에 없는 조합은 계약 위반으로 처리해 자동 반영을 막습니다.
+판정 품질을 가장 크게 좌우하는 것은 카테고리 정의입니다. 여러 카테고리가 같은 설명을 공유하면 모델이 그 둘을 구분할 근거를 갖지 못합니다.
+
+정책 층은 선택입니다. 사용하면 대표 우선순위가 프롬프트에 주입되고, 허용 조합 목록에 없는 대표·추가 쌍을 계약 위반으로 막으며, 모델이 뒤집어 반환한 대표·추가 순서를 후처리로 바로잡습니다. 조합을 데이터로 강제하므로 프롬프트 지시보다 강하게 작동하지만 그만큼 목록 관리 부담이 생깁니다. `POLICY_PATH=none`으로 끄고 우선순위 규칙을 프롬프트에 직접 두는 구성도 가능합니다.
 
 **확정 대신 기권할 수 있습니다.** 결과에는 `needs_review`와 구조화된 사유 코드가 함께 담깁니다. 판단이 모호하면 가장 유력한 후보를 남기되 검수 대상으로 표시하므로, 자동 반영할 판정과 사람이 볼 판정을 구분할 수 있습니다.
 
@@ -29,13 +31,13 @@ LLM에 분류를 맡기면 카탈로그에 없는 값을 지어내거나 같은 
 ```text
 { id, name }                     이름 외 정보는 전송하지 않음
      │
-     ├─ 시스템 프롬프트 조립      지시문 + 카테고리 목록 + 정책
+     ├─ 시스템 프롬프트 조립      지시문 + 카테고리 목록 (+ 정책)
      ├─ strict JSON Schema       허용 키 enum, 필수 필드
      ▼
 OpenAI Responses API (store: false)
      │
-     ├─ 정책 순서 정규화          대표·추가 뒤바뀜 교정
-     ├─ 계약 검증                 허용 키·중복·필수값·정책 관계
+     ├─ 정책 순서 정규화          대표·추가 뒤바뀜 교정 (정책 사용 시)
+     ├─ 계약 검증                 허용 키·중복·필수값 (+ 정책 관계)
      ▼
 대표 분류 + 추가 분류 + 검수 여부 + 사유 + 위반 목록
      │
@@ -69,7 +71,7 @@ curl -X POST http://localhost:8787/classify \
 ```bash
 cp config/catalog.example.json config/catalog.json
 cp config/prompt.example.json config/prompt.json
-cp config/policy.example.json config/policy.json
+cp config/policy.example.json config/policy.json   # 선택
 
 read -s OPENAI_API_KEY
 export OPENAI_API_KEY
@@ -130,9 +132,9 @@ OPENAI_MODEL=<model> npm run evaluate -- \
 - `needs_review=false`면 대표 분류 필수, `true`면 유력 후보 또는 빈 문자열 허용
 - 대표 분류와 추가 분류 간 중복 금지, 추가 분류 내부 중복 금지
 - `review_reason_codes`는 `unknown_identity`, `ambiguous_primary`, `ambiguous_component`, `missing_context`, `unsupported_policy_relation`, `other_uncertainty` 중에서만 선택
-- 정책에 등록되지 않은 대표·추가 조합은 계약 위반
+- 정책을 사용하면 등록되지 않은 대표·추가 조합은 계약 위반
 
-`POST /classify` 응답에는 모델 원본(`modelClassification`), 후처리 적용 결과(`classification`), 정책 조정 내역(`policyAdjustments`), 위반 목록(`contractViolations`)이 함께 담깁니다. `contractViolations`가 비어 있지 않은 결과는 확정값이 아니라 검수 참고용입니다.
+`POST /classify` 응답에는 모델 원본(`modelClassification`), 후처리 적용 결과(`classification`), 정책 조정 내역(`policyAdjustments`), 위반 목록(`contractViolations`)이 함께 담깁니다. 정책을 쓰지 않으면 두 분류는 같고 조정 내역은 빈 배열입니다. `contractViolations`가 비어 있지 않은 결과는 확정값이 아니라 검수 참고용입니다.
 
 ## 설정
 
@@ -140,7 +142,7 @@ OPENAI_MODEL=<model> npm run evaluate -- \
 | --- | --- |
 | `config/catalog.json` | 카테고리 카탈로그. `CATALOG_PATH`로 교체 |
 | `config/prompt.json` | 프롬프트 명세. `PROMPT_PATH`로 교체 |
-| `config/policy.json` | 대표 우선순위와 허용 조합. `POLICY_PATH`로 교체 |
+| `config/policy.json` | 대표 우선순위와 허용 조합. `POLICY_PATH`로 교체하며 `none`이면 정책 없이 실행 |
 | `OPENAI_API_KEY` | 없으면 dry-run |
 | `OPENAI_MODEL` | 사용할 모델 |
 | `REASONING_EFFORT` | 추론 강도. 지원값은 모델마다 다름 |
@@ -148,7 +150,7 @@ OPENAI_MODEL=<model> npm run evaluate -- \
 | `LLM_TIMEOUT_MS` / `LLM_MAX_ATTEMPTS` | 호출 제한 시간과 재시도 상한 |
 | `PORT` | 서버 포트(기본 8787) |
 
-카탈로그는 `major`·`minor`·`description` 배열이며 키는 `major::minor`로 파생됩니다. 정책은 대표 규칙, 허용 조합, 검수 규칙으로 구성되고 로드 시 모든 카테고리 키가 카탈로그에 존재하는지, 역방향 조합이 함께 등록돼 충돌하지 않는지 검사합니다.
+카탈로그는 `major`·`minor`·`description` 배열이며 키는 `major::minor`로 파생됩니다. 정책을 사용하는 경우 대표 규칙, 허용 조합, 검수 규칙으로 구성하며 로드 시 모든 카테고리 키가 카탈로그에 존재하는지, 역방향 조합이 함께 등록돼 충돌하지 않는지 검사합니다.
 
 ## 프로젝트 구조
 
