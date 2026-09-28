@@ -103,7 +103,7 @@ function isRetryable(error) {
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
- * 폐쇄 어휘 분류기 생성
+ * 등록된 카테고리만 반환하는 분류기 생성
  * dry-run 모드는 API 키 없이 동작하며 계약을 충족하는 검수 대기 결과를 반환
  * @param options.catalog 정규화된 카탈로그 배열
  * @param options.promptSpec 프롬프트 명세

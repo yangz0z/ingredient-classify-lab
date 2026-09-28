@@ -1,4 +1,4 @@
-// 폐쇄 어휘 설정 로더 — 카탈로그·프롬프트 명세의 구조 검증과 안정 키 부여
+// 분류 설정 로더 — 카탈로그·프롬프트 명세의 구조 검증과 안정 키 부여
 import { readFile } from "node:fs/promises";
 
 import Ajv from "ajv";
