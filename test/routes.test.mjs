@@ -1,6 +1,7 @@
 // 라우트 통합 테스트 — 예시 설정으로 dry-run 서버를 띄워 검증
 import assert from "node:assert/strict";
 import { once } from "node:events";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
@@ -11,6 +12,11 @@ const env = {
   PROMPT_PATH: fileURLToPath(new URL("../config/prompt.example.json", import.meta.url)),
   POLICY_PATH: fileURLToPath(new URL("../config/policy.example.json", import.meta.url)),
 };
+
+// 예시 설정의 버전을 그대로 읽어 응답과 대조 — 버전 값을 테스트에 고정하지 않는다
+const readVersion = async (path) => JSON.parse(await readFile(path, "utf8")).version;
+const examplePromptVersion = await readVersion(env.PROMPT_PATH);
+const examplePolicyVersion = await readVersion(env.POLICY_PATH);
 
 let server;
 let base;
@@ -35,8 +41,8 @@ test("GET /healthz는 dry-run 상태와 카탈로그 크기를 보고", async ()
   assert.equal(body.status, "ok");
   assert.equal(body.dryRun, true);
   assert.equal(body.catalogCount, 10);
-  assert.equal(body.promptVersion, 4.2);
-  assert.equal(body.policyVersion, 2);
+  assert.equal(body.promptVersion, examplePromptVersion);
+  assert.equal(body.policyVersion, examplePolicyVersion);
 });
 
 test("POST /classify는 dry-run 판정과 빈 계약 위반 목록을 반환", async () => {
