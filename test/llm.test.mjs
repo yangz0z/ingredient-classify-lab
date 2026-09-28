@@ -168,3 +168,42 @@ test("수정 불가능한 SDK 오류 객체도 원래 오류로 반환", async (
 
   await assert.rejects(classifier.classify("쌀"), (error) => error === originalError);
 });
+
+// 대분류 공통 설명은 축 정의로 한 번만 제시 — 실제 카탈로그는 127개 중 112개가
+// 같은 문장을 공유해 개별 줄에 반복하면 카테고리 간 구분 정보가 사라진다
+const sharedDescriptionCatalog = [
+  { key: "원료::닭", major: "원료", minor: "닭", description: "제품을 구성하는 물질의 원천" },
+  { key: "원료::오리", major: "원료", minor: "오리", description: "제품을 구성하는 물질의 원천" },
+  { key: "원료::쌀", major: "원료", minor: "쌀", description: "제품을 구성하는 물질의 원천" },
+  { key: "원료::귀리", major: "원료", minor: "귀리", description: "귀리, 오트밀, 연맥분" },
+  { key: "성분::루테인", major: "성분", minor: "루테인", description: "기능성 성분" },
+];
+
+test("대분류가 공유하는 설명은 축 정의로 한 번만 제시하고 개별 카테고리에서 생략", () => {
+  const prompt = buildSystemPrompt(promptSpec, sharedDescriptionCatalog);
+  const categorySection = prompt.slice(prompt.indexOf("허용 카테고리"));
+
+  // 공유 설명은 대분류 헤더에만 1회 등장
+  const occurrences = categorySection.split("제품을 구성하는 물질의 원천").length - 1;
+  assert.equal(occurrences, 1);
+  assert.ok(categorySection.includes("## 원료 — 제품을 구성하는 물질의 원천"));
+
+  // 공유 설명을 쓰는 카테고리는 key만 표기
+  assert.ok(categorySection.includes("\n- 원료::닭\n"));
+  assert.ok(categorySection.includes("\n- 원료::오리\n"));
+
+  // 고유 설명은 개별 줄에 유지
+  assert.ok(categorySection.includes("- 원료::귀리: 귀리, 오트밀, 연맥분"));
+
+  // 설명이 하나뿐인 대분류는 축 정의로 승격하지 않고 개별 표기 유지
+  assert.ok(categorySection.includes("- 성분::루테인: 기능성 성분"));
+});
+
+test("카테고리 목록은 모든 key를 빠짐없이 포함하고 설명 상속을 명시", () => {
+  const prompt = buildSystemPrompt(promptSpec, sharedDescriptionCatalog);
+
+  for (const row of sharedDescriptionCatalog) {
+    assert.ok(prompt.includes(row.key), `${row.key} 누락`);
+  }
+  assert.ok(prompt.includes("설명이 없는 카테고리는 대분류 축 정의를 따른다"));
+});
