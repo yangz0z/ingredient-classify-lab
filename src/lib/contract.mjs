@@ -2,7 +2,7 @@
 // 계약: LLM 출력은 등록된 카테고리 key만 사용하고, needs_review=true여도
 // 후보 primary를 보존한다(검수 용도, 자동 반영 아님)
 
-import { normalizeClassificationByPolicy } from "./policy.mjs";
+import { applyAutoApplyGate, normalizeClassificationByPolicy } from "./policy.mjs";
 
 export const REQUIRED_RESULT_FIELDS = [
   "name",
@@ -61,8 +61,18 @@ export function buildClassificationSchema(catalog) {
  * @return 위반 메시지 배열 — 위반이 없으면 빈 배열
  */
 export function collectContractViolations(result, catalog, input, policySpec = null) {
-  const normalized = normalizeClassificationByPolicy(result, policySpec).classification;
-  return collectNormalizedContractViolations(normalized, catalog, input, policySpec);
+  const { classification } = normalizeByPolicy(result, policySpec);
+  return collectNormalizedContractViolations(classification, catalog, input, policySpec);
+}
+
+// 정책 순서 정규화 -> 자동 반영 게이팅 순으로 적용하고 적용 내역을 합친다
+function normalizeByPolicy(result, policySpec) {
+  const normalized = normalizeClassificationByPolicy(result, policySpec);
+  const gated = applyAutoApplyGate(normalized.classification, policySpec);
+  return {
+    classification: gated.classification,
+    adjustments: [...normalized.adjustments, ...gated.adjustments],
+  };
 }
 
 function collectNormalizedContractViolations(result, catalog, input, policySpec) {
@@ -138,10 +148,10 @@ function collectNormalizedContractViolations(result, catalog, input, policySpec)
  * @return 정규화된 분류 결과 (reason 트림)
  */
 export function validateClassification(result, catalog, input, policySpec = null) {
-  const normalized = normalizeClassificationByPolicy(result, policySpec).classification;
-  const violations = collectNormalizedContractViolations(normalized, catalog, input, policySpec);
+  const { classification } = normalizeByPolicy(result, policySpec);
+  const violations = collectNormalizedContractViolations(classification, catalog, input, policySpec);
   if (violations.length > 0) throw new Error(violations[0]);
-  return { ...normalized, reason: normalized.reason.trim() };
+  return { ...classification, reason: classification.reason.trim() };
 }
 
 /**
@@ -150,7 +160,7 @@ export function validateClassification(result, catalog, input, policySpec = null
  * @return { ok, violations, classification, adjustments }
  */
 export function checkClassification(result, catalog, input, policySpec = null) {
-  const normalized = normalizeClassificationByPolicy(result, policySpec);
+  const normalized = normalizeByPolicy(result, policySpec);
   const violations = collectNormalizedContractViolations(
     normalized.classification,
     catalog,

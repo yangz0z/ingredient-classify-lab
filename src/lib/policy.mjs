@@ -42,6 +42,18 @@ const policyShape = {
       minItems: 1,
       items: { type: "string", minLength: 1 },
     },
+    autoApplyPolicy: {
+      type: "object",
+      required: ["basis", "excludedPrimaryCategoryKeys"],
+      properties: {
+        basis: { type: "string", minLength: 1 },
+        excludedPrimaryCategoryKeys: {
+          type: "array",
+          items: { type: "string", minLength: 1 },
+        },
+      },
+      additionalProperties: false,
+    },
   },
   additionalProperties: false,
 };
@@ -102,6 +114,15 @@ export function normalizePolicySpec(raw, catalog) {
     };
   });
 
+  const excludedPrimaryCategoryKeys = (raw.autoApplyPolicy?.excludedPrimaryCategoryKeys ?? [])
+    .map(normalizeText);
+  for (const key of excludedPrimaryCategoryKeys) {
+    if (!allowed.has(key)) throw new Error(`자동 반영 제외 카테고리가 카탈로그에 없음: ${key}`);
+  }
+  if (new Set(excludedPrimaryCategoryKeys).size !== excludedPrimaryCategoryKeys.length) {
+    throw new Error("자동 반영 제외 카테고리 중복");
+  }
+
   return {
     version: raw.version,
     primaryRules,
@@ -110,6 +131,10 @@ export function normalizePolicySpec(raw, catalog) {
       relations,
     },
     reviewRules,
+    autoApplyPolicy: {
+      basis: raw.autoApplyPolicy === undefined ? null : normalizeText(raw.autoApplyPolicy.basis),
+      excludedPrimaryCategoryKeys,
+    },
   };
 }
 
@@ -220,6 +245,39 @@ export function normalizeClassificationByPolicy(classification, policySpec) {
     adjustments: [
       `정책 우선순위에 따라 대표 분류 변경: ${classification.primary_category_key} → ${primaryCategoryKey}`,
       ...(resolvesReview ? ["정책 정규화로 대표 우선순위 검수 사유 해소"] : []),
+    ],
+  };
+}
+
+/**
+ * 측정된 판정 정확도가 낮은 대표 카테고리를 자동 반영에서 제외
+ * 분류값은 검수 후보로 보존하고 needs_review만 올린다
+ * @param classification 정책 정규화를 마친 분류
+ * @param policySpec 정규화된 정책 객체
+ * @return 게이팅 결과와 적용 내역
+ */
+export function applyAutoApplyGate(classification, policySpec) {
+  const excluded = policySpec?.autoApplyPolicy?.excludedPrimaryCategoryKeys ?? [];
+  if (excluded.length === 0
+    || classification === null
+    || typeof classification !== "object"
+    || Array.isArray(classification)
+    || classification.needs_review !== false
+    || !excluded.includes(classification.primary_category_key)) {
+    return { classification, adjustments: [] };
+  }
+
+  const reviewReasonCodes = Array.isArray(classification.review_reason_codes)
+    ? [...new Set([...classification.review_reason_codes, "other_uncertainty"])]
+    : ["other_uncertainty"];
+  return {
+    classification: {
+      ...classification,
+      needs_review: true,
+      review_reason_codes: reviewReasonCodes,
+    },
+    adjustments: [
+      `자동 반영 제외 카테고리로 검수 회수: ${classification.primary_category_key}`,
     ],
   };
 }

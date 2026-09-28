@@ -18,6 +18,54 @@ export function sanitizeError(error) {
     .slice(0, 1000);
 }
 
+// 같은 설명을 이 수 이상의 카테고리가 공유하면 개별 정의가 아니라 대분류 축 정의로 본다.
+// 축 정의를 개별 줄마다 반복하면 카테고리를 구분하는 정보가 그만큼 묻힌다.
+const AXIS_DESCRIPTION_MIN_SHARE = 3;
+
+// 대분류에서 가장 널리 공유되는 설명을 축 정의로 선택 — 공유 수가 기준 미달이면 null
+function resolveAxisDescription(rows) {
+  const counts = new Map();
+  for (const row of rows) {
+    counts.set(row.description, (counts.get(row.description) ?? 0) + 1);
+  }
+  let axisDescription = null;
+  let topCount = 0;
+  for (const [description, count] of counts) {
+    if (count > topCount) {
+      axisDescription = description;
+      topCount = count;
+    }
+  }
+  return topCount >= AXIS_DESCRIPTION_MIN_SHARE ? axisDescription : null;
+}
+
+/**
+ * 카테고리 목록을 대분류별로 묶고 공통 설명은 축 정의로 한 번만 제시
+ * @param catalog 정규화된 카탈로그 배열
+ * @return 카테고리 목록 문자열
+ */
+export function formatCategoryCatalog(catalog) {
+  const majors = [];
+  const grouped = new Map();
+  for (const row of catalog) {
+    if (!grouped.has(row.major)) {
+      grouped.set(row.major, []);
+      majors.push(row.major);
+    }
+    grouped.get(row.major).push(row);
+  }
+
+  return majors.map((major) => {
+    const rows = grouped.get(major);
+    const axisDescription = resolveAxisDescription(rows);
+    const header = axisDescription === null ? `## ${major}` : `## ${major} — ${axisDescription}`;
+    const items = rows.map((row) => (row.description === axisDescription
+      ? `- ${row.key}`
+      : `- ${row.key}: ${row.description}`));
+    return [header, ...items].join("\n");
+  }).join("\n\n");
+}
+
 /**
  * 프롬프트 명세와 카탈로그로 시스템 프롬프트 조립
  * @param promptSpec 프롬프트 명세 ({ instructions })
@@ -26,12 +74,13 @@ export function sanitizeError(error) {
  * @return 시스템 프롬프트 문자열
  */
 export function buildSystemPrompt(promptSpec, catalog, policySpec = null) {
-  const categories = catalog
-    .map((row) => `- ${row.key}: ${row.description}`)
-    .join("\n");
   const sections = [
     promptSpec.instructions.join("\n"),
-    `허용 카테고리:\n${categories}`,
+    [
+      "허용 카테고리: 대분류(##)와 그 아래 카테고리 key 목록이다.",
+      "설명이 없는 카테고리는 대분류 축 정의를 따른다.",
+      formatCategoryCatalog(catalog),
+    ].join("\n"),
   ];
   if (policySpec) sections.push(formatPolicyInstructions(policySpec));
   return sections.join("\n\n");
