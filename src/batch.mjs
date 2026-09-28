@@ -92,15 +92,18 @@ async function main() {
     "config/prompt.json",
     "config/prompt.example.json",
   );
-  const policyPath = resolveConfigPath(
-    process.env.POLICY_PATH,
-    "config/policy.json",
-    "config/policy.example.json",
-  );
+  // POLICY_PATH=none이면 정책 계층 없이 실행한다. 규칙을 프롬프트에 합친 구성과 비교할 때 사용
+  const policyPath = process.env.POLICY_PATH === "none"
+    ? null
+    : resolveConfigPath(
+      process.env.POLICY_PATH,
+      "config/policy.json",
+      "config/policy.example.json",
+    );
   const catalog = await loadCatalog(catalogPath);
   const [promptSpec, policySpec, items] = await Promise.all([
     loadPromptSpec(promptPath),
-    loadPolicySpec(policyPath, catalog),
+    policyPath === null ? null : loadPolicySpec(policyPath, catalog),
     loadDataset(path.resolve(options.input), options.limit),
   ]);
   const apiKey = process.env.OPENAI_API_KEY || null;

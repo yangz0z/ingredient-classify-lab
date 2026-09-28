@@ -289,3 +289,37 @@ test("자동 반영 제외 목록은 카탈로그에 있는 키만 허용하고 
   }, catalog);
   assert.deepEqual(withoutGate.autoApplyPolicy.excludedPrimaryCategoryKeys, []);
 });
+
+// 정책 계층 없이도 동작해야 한다 — 규칙을 프롬프트에 합치고 관계 화이트리스트를 뺀 구성 비교용
+test("정책이 없으면 프롬프트에 정책 절을 붙이지 않음", async () => {
+  const { buildSystemPrompt } = await import("../src/lib/llm.mjs");
+  const promptSpec = { version: 1, instructions: ["분류자다."] };
+
+  const withPolicy = buildSystemPrompt(promptSpec, catalog, normalizePolicySpec(gatedPolicy, catalog));
+  const without = buildSystemPrompt(promptSpec, catalog, null);
+
+  assert.ok(withPolicy.includes("카테고리 정책 버전"));
+  assert.ok(!without.includes("카테고리 정책 버전"));
+  assert.ok(without.includes("허용 카테고리"));
+});
+
+test("정책이 없으면 추가 분류 조합을 계약 위반으로 보지 않음", async () => {
+  const { checkClassification } = await import("../src/lib/contract.mjs");
+  const classification = {
+    name: "닭고기 향",
+    primary_category_key: "첨가물::향료",
+    additional_category_keys: ["육류::닭고기"],
+    needs_review: false,
+    review_reason_codes: [],
+    reason: "향료에 닭고기가 함께 표기됨",
+  };
+
+  const checked = checkClassification(classification, catalog, { name: "닭고기 향" }, null);
+
+  assert.equal(checked.ok, true);
+  assert.deepEqual(checked.adjustments, []);
+});
+
+test("정책이 없으면 실행 버전에 프롬프트 버전만 기록", () => {
+  assert.equal(policyPromptVersion({ version: 6 }, null), "6");
+});

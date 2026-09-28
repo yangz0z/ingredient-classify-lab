@@ -286,5 +286,6 @@ export function applyAutoApplyGate(classification, policySpec) {
  * 실행 결과에 남길 프롬프트·정책 합성 버전
  */
 export function policyPromptVersion(promptSpec, policySpec) {
+  if (!policySpec) return String(promptSpec.version);
   return `${promptSpec.version}+policy:${policySpec.version}`;
 }

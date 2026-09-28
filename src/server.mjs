@@ -36,11 +36,15 @@ export function resolveConfigPath(explicitPath, defaultRelative, exampleRelative
 export async function buildApp(env = process.env) {
   const catalogPath = resolveConfigPath(env.CATALOG_PATH, "config/catalog.json", "config/catalog.example.json");
   const promptPath = resolveConfigPath(env.PROMPT_PATH, "config/prompt.json", "config/prompt.example.json");
-  const policyPath = resolveConfigPath(env.POLICY_PATH, "config/policy.json", "config/policy.example.json");
+  // POLICY_PATH=none이면 정책 계층 없이 기동한다. 규칙을 프롬프트에 합친 구성과 비교할 때 사용
+  const policyDisabled = env.POLICY_PATH === "none";
+  const policyPath = policyDisabled
+    ? null
+    : resolveConfigPath(env.POLICY_PATH, "config/policy.json", "config/policy.example.json");
   const catalog = await loadCatalog(catalogPath);
   const [promptSpec, policySpec] = await Promise.all([
     loadPromptSpec(promptPath),
-    loadPolicySpec(policyPath, catalog),
+    policyPath === null ? null : loadPolicySpec(policyPath, catalog),
   ]);
 
   const apiKey = env.OPENAI_API_KEY || null;
