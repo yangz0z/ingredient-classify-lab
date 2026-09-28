@@ -4,6 +4,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 import {
+  applyAutoApplyGate,
   formatPolicyInstructions,
   loadPolicySpec,
   normalizeClassificationByPolicy,
@@ -206,6 +207,84 @@ test("공개 예시 정책은 예시 카탈로그와 함께 로드", async () =>
   const exampleCatalog = await loadCatalog(examplePath("catalog.example.json"));
   const policy = await loadPolicySpec(examplePath("policy.example.json"), exampleCatalog);
 
-  assert.equal(policy.version, 1);
+  assert.equal(policy.version, 2);
   assert.ok(policy.primaryRules.length > 0);
+  assert.deepEqual(policy.autoApplyPolicy.excludedPrimaryCategoryKeys, ["첨가물::향료"]);
+});
+
+// 자동 반영 게이팅 — 측정된 판정 정확도가 낮은 대표 카테고리는 사람 검수로 회수한다
+const gatedPolicy = {
+  version: 2,
+  primaryRules: ["사용 목적을 우선한다."],
+  additionalPolicy: { unlistedRelation: "review", relations: [] },
+  reviewRules: ["근거가 부족하면 검수로 둔다."],
+  autoApplyPolicy: {
+    basis: "정답 69건 자동 판정 정확도 70% 미만",
+    excludedPrimaryCategoryKeys: ["첨가물::향료"],
+  },
+};
+
+test("자동 반영 제외 카테고리는 검수로 강등하고 사유를 남김", () => {
+  const policy = normalizePolicySpec(gatedPolicy, catalog);
+  const classification = {
+    name: "쌀 향",
+    primary_category_key: "첨가물::향료",
+    additional_category_keys: [],
+    needs_review: false,
+    review_reason_codes: [],
+    reason: "향 목적",
+  };
+
+  const gated = applyAutoApplyGate(classification, policy);
+
+  assert.equal(gated.classification.needs_review, true);
+  assert.deepEqual(gated.classification.review_reason_codes, ["other_uncertainty"]);
+  assert.equal(gated.adjustments.length, 1);
+  assert.match(gated.adjustments[0], /자동 반영 제외/);
+  // 원본은 변경하지 않는다
+  assert.equal(classification.needs_review, false);
+  // 분류값 자체는 검수 후보로 보존한다
+  assert.equal(gated.classification.primary_category_key, "첨가물::향료");
+});
+
+test("제외 목록에 없는 대표 카테고리와 이미 검수 대상인 결과는 그대로 유지", () => {
+  const policy = normalizePolicySpec(gatedPolicy, catalog);
+  const passing = {
+    name: "백미",
+    primary_category_key: "곡물::쌀",
+    additional_category_keys: [],
+    needs_review: false,
+    review_reason_codes: [],
+    reason: "쌀",
+  };
+  assert.equal(applyAutoApplyGate(passing, policy).classification, passing);
+  assert.deepEqual(applyAutoApplyGate(passing, policy).adjustments, []);
+
+  const reviewing = {
+    name: "쌀 향",
+    primary_category_key: "첨가물::향료",
+    additional_category_keys: [],
+    needs_review: true,
+    review_reason_codes: ["unknown_identity"],
+    reason: "정체 불명",
+  };
+  assert.equal(applyAutoApplyGate(reviewing, policy).classification, reviewing);
+});
+
+test("자동 반영 제외 목록은 카탈로그에 있는 키만 허용하고 정책에 없어도 로드", () => {
+  assert.throws(
+    () => normalizePolicySpec({
+      ...gatedPolicy,
+      autoApplyPolicy: { basis: "근거", excludedPrimaryCategoryKeys: ["없음::카테고리"] },
+    }, catalog),
+    /자동 반영 제외 카테고리가 카탈로그에 없음/,
+  );
+
+  const withoutGate = normalizePolicySpec({
+    version: 1,
+    primaryRules: ["사용 목적을 우선한다."],
+    additionalPolicy: { unlistedRelation: "review", relations: [] },
+    reviewRules: ["근거가 부족하면 검수로 둔다."],
+  }, catalog);
+  assert.deepEqual(withoutGate.autoApplyPolicy.excludedPrimaryCategoryKeys, []);
 });
