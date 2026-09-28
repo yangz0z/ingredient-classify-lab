@@ -21,8 +21,9 @@ const validateBody = ajv.compile({
  * @param options.classifier createClassifier 결과
  * @param options.catalog 정규화된 카탈로그 배열
  * @param options.promptSpec 프롬프트 명세
+ * @param options.policySpec 카테고리 정책 명세
  */
-export function createClassifyRouter({ classifier, catalog, promptSpec }) {
+export function createClassifyRouter({ classifier, catalog, promptSpec, policySpec }) {
   const router = Router();
 
   router.get("/healthz", (req, res) => {
@@ -31,6 +32,7 @@ export function createClassifyRouter({ classifier, catalog, promptSpec }) {
       dryRun: classifier.dryRun,
       catalogCount: catalog.length,
       promptVersion: promptSpec.version ?? null,
+      policyVersion: policySpec.version ?? null,
     });
   });
 
@@ -55,10 +57,17 @@ export function createClassifyRouter({ classifier, catalog, promptSpec }) {
     const startedAt = Date.now();
     try {
       const result = await classifier.classify(name);
-      const { violations, classification } = checkClassification(result.classification, catalog, { name });
+      const { violations, classification, adjustments } = checkClassification(
+        result.classification,
+        catalog,
+        { name },
+        policySpec,
+      );
       res.json({
         input: { name },
+        modelClassification: result.classification,
         classification,
+        policyAdjustments: adjustments,
         contractViolations: violations,
         dryRun: result.dryRun,
         model: result.model ?? null,

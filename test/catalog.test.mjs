@@ -58,8 +58,10 @@ test("명시 key와 파생 key 불일치 거부", () => {
 test("예시 프롬프트 명세 로드와 구조 오류 거부", async () => {
   const promptSpec = await loadPromptSpec(examplePath("prompt.example.json"));
 
-  assert.equal(promptSpec.version, 4.1);
+  assert.equal(promptSpec.version, 4.2);
   assert.ok(promptSpec.instructions.length > 0);
+  assert.match(promptSpec.instructions.join("\n"), /일반 지식/);
+  assert.match(promptSpec.instructions.join("\n"), /review_reason_codes/);
 
   assert.throws(() => normalizePromptSpec({}), /프롬프트 명세 구조 오류/);
   assert.throws(

@@ -60,6 +60,7 @@ function summarizeConsistency(results, items, repetitions) {
  * @param options.concurrency 최대 동시 실행 수
  * @param options.classifier 분류기
  * @param options.catalog 카탈로그
+ * @param options.policySpec 카테고리 관계 정책
  * @param options.promptVersion 프롬프트 버전
  * @param options.store 결과 저장소
  * @return 실행 요약
@@ -70,6 +71,7 @@ export async function runBatch({
   concurrency,
   classifier,
   catalog,
+  policySpec = null,
   promptVersion,
   store,
   runId = randomUUID(),
@@ -107,6 +109,7 @@ export async function runBatch({
           response.classification,
           catalog,
           { name: task.item.name },
+          policySpec,
         );
         row = {
           runId,
@@ -114,7 +117,9 @@ export async function runBatch({
           itemName: task.item.name,
           repetition: task.repetition,
           status: checked.ok ? "success" : "contract_violation",
+          modelClassification: response.classification,
           classification: checked.classification,
+          policyAdjustments: checked.adjustments,
           contractViolations: checked.violations,
           model: response.model ?? null,
           responseId: response.responseId ?? null,
@@ -130,7 +135,9 @@ export async function runBatch({
           itemName: task.item.name,
           repetition: task.repetition,
           status: "error",
+          modelClassification: null,
           classification: null,
+          policyAdjustments: [],
           contractViolations: [],
           model: classifier.model,
           responseId: null,

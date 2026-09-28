@@ -7,6 +7,7 @@ import { pathToFileURL } from "node:url";
 import { loadCatalog, loadPromptSpec } from "./lib/catalog.mjs";
 import { runBatch } from "./lib/batch.mjs";
 import { createClassifier, sanitizeError } from "./lib/llm.mjs";
+import { loadPolicySpec, policyPromptVersion } from "./lib/policy.mjs";
 import { createResultStore } from "./lib/result-store.mjs";
 import { resolveConfigPath } from "./server.mjs";
 
@@ -91,9 +92,15 @@ async function main() {
     "config/prompt.json",
     "config/prompt.example.json",
   );
-  const [catalog, promptSpec, items] = await Promise.all([
-    loadCatalog(catalogPath),
+  const policyPath = resolveConfigPath(
+    process.env.POLICY_PATH,
+    "config/policy.json",
+    "config/policy.example.json",
+  );
+  const catalog = await loadCatalog(catalogPath);
+  const [promptSpec, policySpec, items] = await Promise.all([
     loadPromptSpec(promptPath),
+    loadPolicySpec(policyPath, catalog),
     loadDataset(path.resolve(options.input), options.limit),
   ]);
   const apiKey = process.env.OPENAI_API_KEY || null;
@@ -101,6 +108,7 @@ async function main() {
   const classifier = createClassifier({
     catalog,
     promptSpec,
+    policySpec,
     apiKey,
     dryRun,
     model: process.env.OPENAI_MODEL || "gpt-5-mini",
@@ -116,7 +124,8 @@ async function main() {
       concurrency: options.concurrency,
       classifier,
       catalog,
-      promptVersion: promptSpec.version,
+      policySpec,
+      promptVersion: policyPromptVersion(promptSpec, policySpec),
       store,
       onResult(row, completed, total) {
         console.log(`${completed}/${total}\t${row.itemId}\t${row.repetition}\t${row.status}\t${row.elapsedMs}ms`);

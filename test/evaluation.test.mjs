@@ -75,6 +75,12 @@ test("대표·추가 분류와 전체 일치율을 실행 결과 기준으로 �
     completeMatchCount: 1,
     completeAccuracy: 0.5,
     modelNeedsReviewCount: 1,
+    policyNormalizationCount: 0,
+    automaticCount: 1,
+    automaticRate: 0.5,
+    automaticMatchCount: 1,
+    automaticAccuracy: 1,
+    incorrectAutomaticCount: 0,
     attentionCount: 1,
     errorCount: 0,
     contractViolationCount: 0,
@@ -125,6 +131,35 @@ test("오류와 계약 위반은 비교에서 제외하고 검토 대상으로 �
   assert.equal(evaluation.summary.attentionCount, 2);
   assert.equal(evaluation.summary.errorCount, 1);
   assert.equal(evaluation.summary.contractViolationCount, 1);
+  assert.equal(evaluation.summary.automaticCount, 0);
+  assert.equal(evaluation.summary.automaticRate, 0);
+  assert.equal(evaluation.summary.automaticAccuracy, null);
+});
+
+test("자동 분류율과 자동 분류 정확도를 별도 집계", () => {
+  const evaluation = evaluateClassifications({
+    expectedItems,
+    results: [
+      successResult(),
+      successResult({
+        itemId: "ingredient-2",
+        itemName: "천연향",
+        classification: {
+          name: "천연향",
+          primary_category_key: "원료::곡물",
+          additional_category_keys: [],
+          needs_review: false,
+          reason: "잘못 자동 확정",
+        },
+      }),
+    ],
+  });
+
+  assert.equal(evaluation.summary.automaticCount, 2);
+  assert.equal(evaluation.summary.automaticRate, 1);
+  assert.equal(evaluation.summary.automaticMatchCount, 1);
+  assert.equal(evaluation.summary.automaticAccuracy, 0.5);
+  assert.equal(evaluation.summary.incorrectAutomaticCount, 1);
 });
 
 test("확정 정답에 없는 실행 결과는 거부", () => {
@@ -148,7 +183,54 @@ test("평가 CSV는 자연어 열과 검토 사유를 포함", () => {
   const csv = formatEvaluationCsv(evaluation.rows);
 
   assert.match(csv, /"성분 ID","성분명","반복 번호","실행 상태"/);
-  assert.match(csv, /"검토 필요","모델이 검토 필요로 판정"/);
+  assert.match(csv, /"적용 결과가 검토 필요로 판정"/);
   assert.match(csv, /"이름만으로 판단하기 어려움"/);
   assert.doesNotMatch(csv, /primaryCategoryKey|needsReview/);
+});
+
+test("평가 CSV는 모델 원본과 정책 정규화 결과를 구분", () => {
+  const evaluation = evaluateClassifications({
+    expectedItems: [expectedItems[0]],
+    results: [successResult({
+      modelClassification: {
+        ...successResult().classification,
+        primary_category_key: "성분::식이섬유",
+        additional_category_keys: ["원료::곡물"],
+        needs_review: true,
+        review_reason_codes: ["ambiguous_primary"],
+      },
+      policyAdjustments: [
+        "정책 우선순위에 따라 대표 분류 변경: 성분::식이섬유 → 원료::곡물",
+      ],
+    })],
+  });
+  const csv = formatEvaluationCsv(evaluation.rows);
+
+  assert.equal(evaluation.summary.policyNormalizationCount, 1);
+  assert.match(csv, /"적용 대표 분류"/);
+  assert.match(csv, /"모델 원본 대표 분류"/);
+  assert.match(csv, /"적용 검수 판정"/);
+  assert.match(csv, /"모델 원본 검수 판정"/);
+  assert.match(csv, /"모델 원본 검수 사유 상세"/);
+  assert.match(csv, /"정책 정규화"/);
+  assert.match(csv, /성분 > 식이섬유/);
+  assert.match(csv, /정책 우선순위에 따라 대표 분류 변경/);
+});
+
+test("평가 CSV는 구조화된 검수 사유를 자연어로 출력", () => {
+  const evaluation = evaluateClassifications({
+    expectedItems: [expectedItems[0]],
+    results: [successResult({
+      classification: {
+        ...successResult().classification,
+        needs_review: true,
+        review_reason_codes: ["ambiguous_primary", "missing_context"],
+      },
+    })],
+  });
+  const csv = formatEvaluationCsv(evaluation.rows);
+
+  assert.match(csv, /"적용 검수 사유 상세"/);
+  assert.match(csv, /대표 분류 후보가 여러 개임 \| 분류에 필요한 정보가 부족함/);
+  assert.doesNotMatch(csv, /ambiguous_primary|missing_context/);
 });

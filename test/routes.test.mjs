@@ -9,6 +9,7 @@ import { buildApp } from "../src/server.mjs";
 const env = {
   CATALOG_PATH: fileURLToPath(new URL("../config/catalog.example.json", import.meta.url)),
   PROMPT_PATH: fileURLToPath(new URL("../config/prompt.example.json", import.meta.url)),
+  POLICY_PATH: fileURLToPath(new URL("../config/policy.example.json", import.meta.url)),
 };
 
 let server;
@@ -34,7 +35,8 @@ test("GET /healthz는 dry-run 상태와 카탈로그 크기를 보고", async ()
   assert.equal(body.status, "ok");
   assert.equal(body.dryRun, true);
   assert.equal(body.catalogCount, 10);
-  assert.equal(body.promptVersion, 4.1);
+  assert.equal(body.promptVersion, 4.2);
+  assert.equal(body.policyVersion, 1);
 });
 
 test("POST /classify는 dry-run 판정과 빈 계약 위반 목록을 반환", async () => {
@@ -47,8 +49,10 @@ test("POST /classify는 dry-run 판정과 빈 계약 위반 목록을 반환", a
 
   assert.equal(response.status, 200);
   assert.deepEqual(body.input, { name: "건조 닭가슴살" });
+  assert.equal(body.modelClassification.name, "건조 닭가슴살");
   assert.equal(body.classification.name, "건조 닭가슴살");
   assert.equal(body.classification.needs_review, true);
+  assert.deepEqual(body.policyAdjustments, []);
   assert.deepEqual(body.contractViolations, []);
   assert.equal(body.dryRun, true);
   assert.equal(body.model, null);

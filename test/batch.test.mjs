@@ -140,6 +140,97 @@ test("배치는 항목 오류를 격리하고 실패 결과를 저장", async ()
   assert.equal(store.state.completion.status, "completed_with_errors");
 });
 
+test("배치는 정책에 없는 additional 관계를 계약 위반으로 격리", async () => {
+  const store = createMemoryStore();
+  const classifier = {
+    dryRun: false,
+    model: "synthetic-model",
+    async classify(name) {
+      return {
+        dryRun: false,
+        model: "synthetic-model",
+        responseId: "response-policy-violation",
+        usage: null,
+        attemptCount: 1,
+        classification: {
+          name,
+          primary_category_key: "곡물::쌀",
+          additional_category_keys: ["첨가물::향료"],
+          needs_review: false,
+          reason: "허용되지 않은 관계",
+        },
+      };
+    },
+  };
+
+  const report = await runBatch({
+    items: [{ id: "policy-violation", name: "쌀 향" }],
+    repetitions: 1,
+    concurrency: 1,
+    classifier,
+    catalog,
+    policySpec: {
+      additionalPolicy: { relations: [] },
+    },
+    promptVersion: "4.1+policy:1",
+    store,
+    runId: "run-policy-violation",
+  });
+
+  assert.equal(report.contractViolationCount, 1);
+  assert.equal(store.state.results[0].status, "contract_violation");
+  assert.match(store.state.results[0].contractViolations[0], /허용되지 않은 primary-additional 관계/);
+});
+
+test("배치는 정책 우선순위로 정규화한 결과와 모델 원본을 함께 저장", async () => {
+  const store = createMemoryStore();
+  const modelClassification = {
+    name: "쌀 향",
+    primary_category_key: "첨가물::향료",
+    additional_category_keys: ["곡물::쌀"],
+    needs_review: false,
+    reason: "카테고리 순서 반대",
+  };
+  const classifier = {
+    dryRun: false,
+    model: "synthetic-model",
+    async classify() {
+      return {
+        dryRun: false,
+        model: "synthetic-model",
+        responseId: "response-normalized",
+        usage: null,
+        attemptCount: 1,
+        classification: modelClassification,
+      };
+    },
+  };
+
+  const report = await runBatch({
+    items: [{ id: "normalized", name: "쌀 향" }],
+    repetitions: 1,
+    concurrency: 1,
+    classifier,
+    catalog,
+    policySpec: {
+      additionalPolicy: {
+        relations: [{
+          primaryCategoryKey: "곡물::쌀",
+          additionalCategoryKey: "첨가물::향료",
+        }],
+      },
+    },
+    promptVersion: "4.1+policy:1",
+    store,
+    runId: "run-normalized",
+  });
+
+  assert.equal(report.successCount, 1);
+  assert.equal(store.state.results[0].classification.primary_category_key, "곡물::쌀");
+  assert.equal(store.state.results[0].modelClassification, modelClassification);
+  assert.equal(store.state.results[0].policyAdjustments.length, 1);
+});
+
 test("반복 판정이 달라지면 불일치 항목으로 집계", async () => {
   let call = 0;
   const store = createMemoryStore();

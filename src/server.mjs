@@ -8,6 +8,7 @@ import express from "express";
 
 import { loadCatalog, loadPromptSpec } from "./lib/catalog.mjs";
 import { createClassifier, sanitizeError } from "./lib/llm.mjs";
+import { loadPolicySpec } from "./lib/policy.mjs";
 import { createClassifyRouter } from "./routes/classify.mjs";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -35,9 +36,11 @@ export function resolveConfigPath(explicitPath, defaultRelative, exampleRelative
 export async function buildApp(env = process.env) {
   const catalogPath = resolveConfigPath(env.CATALOG_PATH, "config/catalog.json", "config/catalog.example.json");
   const promptPath = resolveConfigPath(env.PROMPT_PATH, "config/prompt.json", "config/prompt.example.json");
-  const [catalog, promptSpec] = await Promise.all([
-    loadCatalog(catalogPath),
+  const policyPath = resolveConfigPath(env.POLICY_PATH, "config/policy.json", "config/policy.example.json");
+  const catalog = await loadCatalog(catalogPath);
+  const [promptSpec, policySpec] = await Promise.all([
     loadPromptSpec(promptPath),
+    loadPolicySpec(policyPath, catalog),
   ]);
 
   const apiKey = env.OPENAI_API_KEY || null;
@@ -45,6 +48,7 @@ export async function buildApp(env = process.env) {
   const classifier = createClassifier({
     catalog,
     promptSpec,
+    policySpec,
     apiKey,
     dryRun,
     model: env.OPENAI_MODEL || "gpt-5-mini",
@@ -56,7 +60,7 @@ export async function buildApp(env = process.env) {
   const app = express();
   app.disable("x-powered-by");
   app.use(express.json({ limit: "16kb" }));
-  app.use(createClassifyRouter({ classifier, catalog, promptSpec }));
+  app.use(createClassifyRouter({ classifier, catalog, promptSpec, policySpec }));
 
   app.use((req, res) => {
     res.status(404).json({
@@ -83,7 +87,7 @@ export async function buildApp(env = process.env) {
 
   return {
     app,
-    meta: { catalogPath, promptPath, dryRun, catalogCount: catalog.length },
+    meta: { catalogPath, promptPath, policyPath, dryRun, catalogCount: catalog.length, policyVersion: policySpec.version },
   };
 }
 
@@ -96,6 +100,7 @@ async function main() {
       port,
       dryRun: meta.dryRun,
       catalogCount: meta.catalogCount,
+      policyVersion: meta.policyVersion,
     }));
   });
 }

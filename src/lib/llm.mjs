@@ -2,6 +2,7 @@
 import OpenAI from "openai";
 
 import { buildClassificationSchema } from "./contract.mjs";
+import { formatPolicyInstructions } from "./policy.mjs";
 
 const RETRY_BASE_DELAY_MS = 500;
 
@@ -21,13 +22,19 @@ export function sanitizeError(error) {
  * 프롬프트 명세와 카탈로그로 시스템 프롬프트 조립
  * @param promptSpec 프롬프트 명세 ({ instructions })
  * @param catalog 정규화된 카탈로그 배열
+ * @param policySpec 검증된 카테고리 정책 객체
  * @return 시스템 프롬프트 문자열
  */
-export function buildSystemPrompt(promptSpec, catalog) {
+export function buildSystemPrompt(promptSpec, catalog, policySpec = null) {
   const categories = catalog
     .map((row) => `- ${row.key}: ${row.description}`)
     .join("\n");
-  return `${promptSpec.instructions.join("\n")}\n\n허용 카테고리:\n${categories}`;
+  const sections = [
+    promptSpec.instructions.join("\n"),
+    `허용 카테고리:\n${categories}`,
+  ];
+  if (policySpec) sections.push(formatPolicyInstructions(policySpec));
+  return sections.join("\n\n");
 }
 
 // 재시도 대상 판정 — 시간 초과, 연결 오류, 429, 5xx만 재시도
@@ -51,12 +58,14 @@ const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
  * dry-run 모드는 API 키 없이 동작하며 계약을 충족하는 검수 대기 결과를 반환
  * @param options.catalog 정규화된 카탈로그 배열
  * @param options.promptSpec 프롬프트 명세
+ * @param options.policySpec 검증된 카테고리 정책 객체
  * @param options.apiKey OpenAI API 키 — 없으면 dry-run
  * @return { classify, dryRun, model, systemPrompt, schema }
  */
 export function createClassifier({
   catalog,
   promptSpec,
+  policySpec = null,
   apiKey = null,
   model = "gpt-5-mini",
   reasoningEffort = "minimal",
@@ -67,7 +76,7 @@ export function createClassifier({
   retryDelay = wait,
 }) {
   const schema = buildClassificationSchema(catalog);
-  const systemPrompt = buildSystemPrompt(promptSpec, catalog);
+  const systemPrompt = buildSystemPrompt(promptSpec, catalog, policySpec);
   // SDK 자체 재시도는 끄고 이 계층에서 횟수를 통제
   const client = dryRun ? null : (providedClient ?? new OpenAI({ apiKey, maxRetries: 0 }));
 
@@ -84,6 +93,7 @@ export function createClassifier({
           primary_category_key: "",
           additional_category_keys: [],
           needs_review: true,
+          review_reason_codes: ["missing_context"],
           reason: "dry-run 모드 — LLM 미호출, 실제 판정 아님",
         },
       };

@@ -15,6 +15,15 @@ const catalog = [
   { key: "첨가물::향료", major: "첨가물", minor: "향료" },
 ];
 
+const policySpec = {
+  additionalPolicy: {
+    relations: [{
+      primaryCategoryKey: "곡물::쌀",
+      additionalCategoryKey: "기능성::유산균",
+    }],
+  },
+};
+
 test("분류 스키마는 허용 카테고리와 빈 primary만 노출", () => {
   const schema = buildClassificationSchema(catalog);
 
@@ -27,7 +36,49 @@ test("분류 스키마는 허용 카테고리와 빈 primary만 노출", () => {
     ["곡물::쌀", "기능성::유산균", "첨가물::향료"],
   );
   assert.equal(schema.properties.reason.minLength, 1);
+  assert.deepEqual(schema.properties.review_reason_codes.items.enum, [
+    "unknown_identity",
+    "ambiguous_primary",
+    "ambiguous_component",
+    "missing_context",
+    "unsupported_policy_relation",
+    "other_uncertainty",
+  ]);
+  assert.equal("uniqueItems" in schema.properties.review_reason_codes, false);
+  assert.ok(schema.required.includes("review_reason_codes"));
   assert.equal(schema.additionalProperties, false);
+});
+
+test("구조화된 검수 사유와 needs_review의 일관성을 검증", () => {
+  const review = validateClassification(
+    {
+      name: "알 수 없는 재료",
+      primary_category_key: "",
+      additional_category_keys: [],
+      needs_review: true,
+      review_reason_codes: ["unknown_identity"],
+      reason: "정체 확인 불가",
+    },
+    catalog,
+    { name: "알 수 없는 재료" },
+  );
+  assert.deepEqual(review.review_reason_codes, ["unknown_identity"]);
+
+  assert.throws(
+    () => validateClassification(
+      {
+        name: "쌀",
+        primary_category_key: "곡물::쌀",
+        additional_category_keys: [],
+        needs_review: false,
+        review_reason_codes: ["missing_context"],
+        reason: "검수 불필요와 사유 충돌",
+      },
+      catalog,
+      { name: "쌀" },
+    ),
+    /needs_review와 검수 사유 코드 불일치/,
+  );
 });
 
 test("정상 primary와 additional 결과 허용", () => {
@@ -44,6 +95,60 @@ test("정상 primary와 additional 결과 허용", () => {
   );
 
   assert.equal(result.primary_category_key, "곡물::쌀");
+});
+
+test("정책에 등록된 primary와 additional 관계만 허용", () => {
+  const allowed = validateClassification(
+    {
+      name: "쌀과 유산균",
+      primary_category_key: "곡물::쌀",
+      additional_category_keys: ["기능성::유산균"],
+      needs_review: false,
+      reason: "허용 관계",
+    },
+    catalog,
+    { name: "쌀과 유산균" },
+    policySpec,
+  );
+  assert.deepEqual(allowed.additional_category_keys, ["기능성::유산균"]);
+
+  assert.throws(
+    () => validateClassification(
+      {
+        name: "쌀 향",
+        primary_category_key: "곡물::쌀",
+        additional_category_keys: ["첨가물::향료"],
+        needs_review: false,
+        reason: "허용되지 않은 관계",
+      },
+      catalog,
+      { name: "쌀 향" },
+      policySpec,
+    ),
+    /허용되지 않은 primary-additional 관계/,
+  );
+});
+
+test("정책 관계가 역방향이면 정규화 후 계약을 통과", () => {
+  const checked = checkClassification(
+    {
+      name: "쌀과 유산균",
+      primary_category_key: "기능성::유산균",
+      additional_category_keys: ["곡물::쌀"],
+      needs_review: false,
+      reason: "카테고리는 맞지만 순서가 반대",
+    },
+    catalog,
+    { name: "쌀과 유산균" },
+    policySpec,
+  );
+
+  assert.equal(checked.ok, true);
+  assert.equal(checked.classification.primary_category_key, "곡물::쌀");
+  assert.deepEqual(checked.classification.additional_category_keys, ["기능성::유산균"]);
+  assert.deepEqual(checked.adjustments, [
+    "정책 우선순위에 따라 대표 분류 변경: 기능성::유산균 → 곡물::쌀",
+  ]);
 });
 
 test("허용 목록 밖 카테고리 거부", () => {

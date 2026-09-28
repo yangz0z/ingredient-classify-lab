@@ -15,6 +15,20 @@ const promptSpec = {
   instructions: ["폐쇄 어휘 분류자다.", "제공된 key만 사용한다."],
 };
 
+const policySpec = {
+  version: 1,
+  primaryRules: ["명시된 사용 목적을 우선한다."],
+  additionalPolicy: {
+    unlistedRelation: "review",
+    relations: [{
+      primaryCategoryKey: "첨가물::향료",
+      additionalCategoryKey: "곡물::쌀",
+      condition: "독립 구성 성분으로 직접 확인되는 경우",
+    }],
+  },
+  reviewRules: ["우선순위를 결정할 수 없으면 검수 대상으로 둔다."],
+};
+
 test("오류 메시지에서 API 키 형식을 제거", () => {
   const key = `sk-${"a".repeat(32)}`;
   assert.equal(sanitizeError(new Error(`실패 ${key}`)), "실패 [REDACTED]");
@@ -25,11 +39,13 @@ test("오류 메시지에서 API 키 형식을 제거", () => {
 });
 
 test("시스템 프롬프트는 지시문과 카테고리 목록을 포함", () => {
-  const prompt = buildSystemPrompt(promptSpec, catalog);
+  const prompt = buildSystemPrompt(promptSpec, catalog, policySpec);
 
   assert.ok(prompt.includes("폐쇄 어휘 분류자다."));
   assert.ok(prompt.includes("- 곡물::쌀: 쌀 기반 곡물"));
   assert.ok(prompt.includes("- 첨가물::향료: 천연·합성 향료"));
+  assert.ok(prompt.includes("첨가물::향료 -> 곡물::쌀"));
+  assert.ok(prompt.includes("목록에 없는 primary-additional 관계"));
 });
 
 test("dry-run 분류기는 키 없이 계약 충족 결과를 반환", async () => {
@@ -44,6 +60,7 @@ test("dry-run 분류기는 키 없이 계약 충족 결과를 반환", async () 
 
   const classification = validateClassification(result.classification, catalog, { name: "건조 쌀가루" });
   assert.equal(classification.needs_review, true);
+  assert.deepEqual(classification.review_reason_codes, ["missing_context"]);
   assert.equal(classification.primary_category_key, "");
 });
 

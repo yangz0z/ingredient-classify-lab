@@ -12,6 +12,7 @@ import {
 } from "./lib/final-classifications.mjs";
 import { evaluateClassifications, formatEvaluationCsv } from "./lib/evaluation.mjs";
 import { createClassifier, sanitizeError } from "./lib/llm.mjs";
+import { loadPolicySpec, policyPromptVersion } from "./lib/policy.mjs";
 import { createResultStore } from "./lib/result-store.mjs";
 import { resolveConfigPath } from "./server.mjs";
 
@@ -77,9 +78,15 @@ async function main() {
     "config/prompt.json",
     "config/prompt.example.json",
   );
-  const [catalog, promptSpec, inputText] = await Promise.all([
-    loadCatalog(catalogPath),
+  const policyPath = resolveConfigPath(
+    process.env.POLICY_PATH,
+    "config/policy.json",
+    "config/policy.example.json",
+  );
+  const catalog = await loadCatalog(catalogPath);
+  const [promptSpec, policySpec, inputText] = await Promise.all([
     loadPromptSpec(promptPath),
+    loadPolicySpec(policyPath, catalog),
     readFile(path.resolve(options.input), "utf8"),
   ]);
   const expectedItems = validateFinalClassifications(
@@ -91,6 +98,7 @@ async function main() {
   const classifier = createClassifier({
     catalog,
     promptSpec,
+    policySpec,
     apiKey,
     dryRun,
     model: process.env.OPENAI_MODEL || "gpt-5-mini",
@@ -106,7 +114,8 @@ async function main() {
       concurrency: options.concurrency,
       classifier,
       catalog,
-      promptVersion: promptSpec.version,
+      policySpec,
+      promptVersion: policyPromptVersion(promptSpec, policySpec),
       store,
       onResult(row, completed, total) {
         console.log(`${completed}/${total}\t${row.itemId}\t${row.repetition}\t${row.status}\t${row.elapsedMs}ms`);

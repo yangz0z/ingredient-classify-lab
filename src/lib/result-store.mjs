@@ -37,7 +37,9 @@ function mapResult(row) {
     itemName: row.item_name,
     repetition: row.repetition,
     status: row.status,
+    modelClassification: parseJson(row.model_classification_json),
     classification: parseJson(row.classification_json),
+    policyAdjustments: parseJson(row.policy_adjustments_json),
     contractViolations: parseJson(row.contract_violations_json),
     model: row.model,
     responseId: row.response_id,
@@ -85,7 +87,9 @@ export function createResultStore(databasePath) {
       item_name TEXT NOT NULL,
       repetition INTEGER NOT NULL,
       status TEXT NOT NULL,
+      model_classification_json TEXT,
       classification_json TEXT,
+      policy_adjustments_json TEXT NOT NULL DEFAULT '[]',
       contract_violations_json TEXT NOT NULL,
       model TEXT,
       response_id TEXT,
@@ -101,6 +105,17 @@ export function createResultStore(databasePath) {
       ON classification_results(run_id, status);
   `);
 
+  const resultColumns = new Set(database
+    .prepare("PRAGMA table_info(classification_results)")
+    .all()
+    .map((column) => column.name));
+  if (!resultColumns.has("model_classification_json")) {
+    database.exec("ALTER TABLE classification_results ADD COLUMN model_classification_json TEXT");
+  }
+  if (!resultColumns.has("policy_adjustments_json")) {
+    database.exec("ALTER TABLE classification_results ADD COLUMN policy_adjustments_json TEXT NOT NULL DEFAULT '[]'");
+  }
+
   const insertRun = database.prepare(`
     INSERT INTO batch_runs (
       id, started_at, status, model, dry_run, prompt_version,
@@ -112,13 +127,13 @@ export function createResultStore(databasePath) {
   `);
   const insertResult = database.prepare(`
     INSERT INTO classification_results (
-      run_id, item_id, item_name, repetition, status, classification_json,
-      contract_violations_json, model, response_id, usage_json,
-      attempt_count, elapsed_ms, error
+      run_id, item_id, item_name, repetition, status, model_classification_json,
+      classification_json, policy_adjustments_json, contract_violations_json,
+      model, response_id, usage_json, attempt_count, elapsed_ms, error
     ) VALUES (
-      @runId, @itemId, @itemName, @repetition, @status, @classificationJson,
-      @contractViolationsJson, @model, @responseId, @usageJson,
-      @attemptCount, @elapsedMs, @error
+      @runId, @itemId, @itemName, @repetition, @status, @modelClassificationJson,
+      @classificationJson, @policyAdjustmentsJson, @contractViolationsJson,
+      @model, @responseId, @usageJson, @attemptCount, @elapsedMs, @error
     )
   `);
   const updateRun = database.prepare(`
@@ -144,11 +159,18 @@ export function createResultStore(databasePath) {
       insertRun.run({ ...run, dryRun: run.dryRun ? 1 : 0 });
     },
     saveResult(result) {
+      const modelClassification = result.modelClassification === undefined
+        ? result.classification
+        : result.modelClassification;
       insertResult.run({
         ...result,
+        modelClassificationJson: modelClassification === null
+          ? null
+          : JSON.stringify(modelClassification),
         classificationJson: result.classification === null
           ? null
           : JSON.stringify(result.classification),
+        policyAdjustmentsJson: JSON.stringify(result.policyAdjustments ?? []),
         contractViolationsJson: JSON.stringify(result.contractViolations),
         usageJson: result.usage === null ? null : JSON.stringify(result.usage),
       });

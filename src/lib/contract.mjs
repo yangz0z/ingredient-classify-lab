@@ -2,12 +2,23 @@
 // 계약: LLM 출력은 등록된 카테고리 key만 사용하고, needs_review=true여도
 // 후보 primary를 보존한다(검수 용도, 자동 반영 아님)
 
+import { normalizeClassificationByPolicy } from "./policy.mjs";
+
 export const REQUIRED_RESULT_FIELDS = [
   "name",
   "primary_category_key",
   "additional_category_keys",
   "needs_review",
   "reason",
+];
+
+export const REVIEW_REASON_CODES = [
+  "unknown_identity",
+  "ambiguous_primary",
+  "ambiguous_component",
+  "missing_context",
+  "unsupported_policy_relation",
+  "other_uncertainty",
 ];
 
 /**
@@ -30,9 +41,14 @@ export function buildClassificationSchema(catalog) {
         maxItems: 10,
       },
       needs_review: { type: "boolean" },
+      review_reason_codes: {
+        type: "array",
+        items: { type: "string", enum: REVIEW_REASON_CODES },
+        maxItems: REVIEW_REASON_CODES.length,
+      },
       reason: { type: "string", minLength: 1 },
     },
-    required: [...REQUIRED_RESULT_FIELDS],
+    required: [...REQUIRED_RESULT_FIELDS, "review_reason_codes"],
   };
 }
 
@@ -41,9 +57,15 @@ export function buildClassificationSchema(catalog) {
  * @param result LLM 분류 결과
  * @param catalog 정규화된 카탈로그 배열
  * @param input 원본 입력 ({ name })
+ * @param policySpec 카테고리 관계 정책
  * @return 위반 메시지 배열 — 위반이 없으면 빈 배열
  */
-export function collectContractViolations(result, catalog, input) {
+export function collectContractViolations(result, catalog, input, policySpec = null) {
+  const normalized = normalizeClassificationByPolicy(result, policySpec).classification;
+  return collectNormalizedContractViolations(normalized, catalog, input, policySpec);
+}
+
+function collectNormalizedContractViolations(result, catalog, input, policySpec) {
   if (result === null || typeof result !== "object" || Array.isArray(result)) {
     return ["분류 응답 객체 누락"];
   }
@@ -75,11 +97,34 @@ export function collectContractViolations(result, catalog, input) {
     if (result.primary_category_key && result.additional_category_keys.includes(result.primary_category_key)) {
       violations.push("primary와 additional 중복");
     }
+    if (policySpec && result.additional_category_keys.length > 0) {
+      const allowedRelations = new Set(policySpec.additionalPolicy.relations.map(
+        (relation) => `${relation.primaryCategoryKey}\u0000${relation.additionalCategoryKey}`,
+      ));
+      for (const additionalCategoryKey of result.additional_category_keys) {
+        const relation = `${result.primary_category_key}\u0000${additionalCategoryKey}`;
+        if (!allowedRelations.has(relation)) {
+          violations.push(
+            `허용되지 않은 primary-additional 관계: ${result.primary_category_key} -> ${additionalCategoryKey}`,
+          );
+        }
+      }
+    }
   }
   if (typeof result.needs_review !== "boolean") {
     violations.push("needs_review 형식 오류");
   } else if (!result.needs_review && !result.primary_category_key) {
     violations.push("확정 결과의 primary 누락");
+  }
+  if ("review_reason_codes" in result) {
+    if (!Array.isArray(result.review_reason_codes)
+      || result.review_reason_codes.some((code) => !REVIEW_REASON_CODES.includes(code))
+      || new Set(result.review_reason_codes).size !== result.review_reason_codes.length) {
+      violations.push("검수 사유 코드 형식 오류");
+    } else if (typeof result.needs_review === "boolean"
+      && result.needs_review !== (result.review_reason_codes.length > 0)) {
+      violations.push("needs_review와 검수 사유 코드 불일치");
+    }
   }
   if (typeof result.reason !== "string" || !result.reason.trim()) {
     violations.push("판정 사유 누락");
@@ -92,22 +137,44 @@ export function collectContractViolations(result, catalog, input) {
  * needs_review=true의 후보 primary는 비우지 않고 그대로 보존
  * @return 정규화된 분류 결과 (reason 트림)
  */
-export function validateClassification(result, catalog, input) {
-  const violations = collectContractViolations(result, catalog, input);
+export function validateClassification(result, catalog, input, policySpec = null) {
+  const normalized = normalizeClassificationByPolicy(result, policySpec).classification;
+  const violations = collectNormalizedContractViolations(normalized, catalog, input, policySpec);
   if (violations.length > 0) throw new Error(violations[0]);
-  return { ...result, reason: result.reason.trim() };
+  return { ...normalized, reason: normalized.reason.trim() };
 }
 
 /**
  * 위반 목록과 정규화 결과를 함께 반환 — API 응답 조립용
- * 위반이 있어도 결과 형상이 객체면 원본을 그대로 노출해 검수에 활용
- * @return { ok, violations, classification }
+ * 위반이 있어도 결과 형상이 객체면 정책 정규화 결과를 보존해 검수에 활용
+ * @return { ok, violations, classification, adjustments }
  */
-export function checkClassification(result, catalog, input) {
-  const violations = collectContractViolations(result, catalog, input);
+export function checkClassification(result, catalog, input, policySpec = null) {
+  const normalized = normalizeClassificationByPolicy(result, policySpec);
+  const violations = collectNormalizedContractViolations(
+    normalized.classification,
+    catalog,
+    input,
+    policySpec,
+  );
   if (violations.length > 0) {
-    const preservable = result !== null && typeof result === "object" && !Array.isArray(result);
-    return { ok: false, violations, classification: preservable ? result : null };
+    const preservable = normalized.classification !== null
+      && typeof normalized.classification === "object"
+      && !Array.isArray(normalized.classification);
+    return {
+      ok: false,
+      violations,
+      classification: preservable ? normalized.classification : null,
+      adjustments: normalized.adjustments,
+    };
   }
-  return { ok: true, violations: [], classification: { ...result, reason: result.reason.trim() } };
+  return {
+    ok: true,
+    violations: [],
+    classification: {
+      ...normalized.classification,
+      reason: normalized.classification.reason.trim(),
+    },
+    adjustments: normalized.adjustments,
+  };
 }
