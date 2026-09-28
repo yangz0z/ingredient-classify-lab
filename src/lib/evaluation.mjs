@@ -51,12 +51,12 @@ function sameCategorySet(expected, actual) {
     && expectedKeys.every((key, index) => key === actualKeys[index]);
 }
 
-function reviewReasons({ status, primaryMatches, additionalMatches, modelNeedsReview }) {
+// 검토 대상 판정도 대표 분류만 본다. 추가 분류 차이는 CSV의 확정·모델 열에서 직접 확인한다
+function reviewReasons({ status, primaryMatches, modelNeedsReview }) {
   const reasons = [];
   if (status === "error") reasons.push("실행 오류");
   if (status === "contract_violation") reasons.push("분류 계약 위반");
   if (status === "success" && !primaryMatches) reasons.push("대표 분류 불일치");
-  if (status === "success" && !additionalMatches) reasons.push("추가 분류 불일치");
   if (status === "success" && modelNeedsReview) reasons.push("적용 결과가 검토 필요로 판정");
   return reasons;
 }
@@ -102,7 +102,6 @@ export function evaluateClassifications({ expectedItems, results }) {
     const reasons = reviewReasons({
       status: result.status,
       primaryMatches,
-      additionalMatches,
       modelNeedsReview,
     });
 
@@ -138,8 +137,9 @@ export function evaluateClassifications({ expectedItems, results }) {
   const additionalMatchCount = comparableRows.filter((row) => row.additionalMatches).length;
   const completeMatchCount = comparableRows.filter((row) => row.completeMatches).length;
   const rate = (count) => comparableRows.length === 0 ? null : count / comparableRows.length;
+  // 자동 분류 집계는 대표 분류만 본다 — 추가 분류는 운영 판단에서 비중이 낮다
   const automaticRows = comparableRows.filter((row) => !row.modelNeedsReview);
-  const automaticMatchCount = automaticRows.filter((row) => row.completeMatches).length;
+  const automaticMatchCount = automaticRows.filter((row) => row.primaryMatches).length;
 
   return {
     summary: {

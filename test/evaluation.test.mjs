@@ -234,3 +234,69 @@ test("평가 CSV는 구조화된 검수 사유를 자연어로 출력", () => {
   assert.match(csv, /대표 분류 후보가 여러 개임 \| 분류에 필요한 정보가 부족함/);
   assert.doesNotMatch(csv, /ambiguous_primary|missing_context/);
 });
+
+// 자동 분류 정확도는 대표 분류만 본다 — 추가 분류는 운영 판단에서 비중이 낮아 제외
+test("대표 분류가 맞으면 추가 분류가 달라도 자동 분류 정답으로 집계", () => {
+  const evaluation = evaluateClassifications({
+    expectedItems,
+    results: [
+      successResult({
+        classification: {
+          name: "쌀가루",
+          primary_category_key: "원료::곡물",
+          additional_category_keys: [],
+          needs_review: false,
+          reason: "대표는 맞고 추가만 누락",
+        },
+      }),
+    ],
+  });
+
+  assert.equal(evaluation.summary.additionalMatchCount, 0);
+  assert.equal(evaluation.summary.completeMatchCount, 0);
+  // 자동 분류 집계는 대표 기준이므로 정답
+  assert.equal(evaluation.summary.automaticMatchCount, 1);
+  assert.equal(evaluation.summary.automaticAccuracy, 1);
+  assert.equal(evaluation.summary.incorrectAutomaticCount, 0);
+});
+
+test("대표 분류가 틀리면 추가 분류가 맞아도 자동 분류 오류로 집계", () => {
+  const evaluation = evaluateClassifications({
+    expectedItems,
+    results: [
+      successResult({
+        classification: {
+          name: "쌀가루",
+          primary_category_key: "기타::첨가물",
+          additional_category_keys: ["성분::식이섬유"],
+          needs_review: false,
+          reason: "대표만 틀림",
+        },
+      }),
+    ],
+  });
+
+  assert.equal(evaluation.summary.additionalMatchCount, 1);
+  assert.equal(evaluation.summary.automaticMatchCount, 0);
+  assert.equal(evaluation.summary.incorrectAutomaticCount, 1);
+});
+
+test("대표 분류가 맞으면 추가 분류 차이만으로 검토 대상이 되지 않음", () => {
+  const evaluation = evaluateClassifications({
+    expectedItems,
+    results: [
+      successResult({
+        classification: {
+          name: "쌀가루",
+          primary_category_key: "원료::곡물",
+          additional_category_keys: [],
+          needs_review: false,
+          reason: "대표는 맞고 추가만 누락",
+        },
+      }),
+    ],
+  });
+
+  assert.equal(evaluation.summary.attentionCount, 0);
+  assert.deepEqual(evaluation.rows[0].attentionReasons, []);
+});
